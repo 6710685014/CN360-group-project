@@ -18,8 +18,10 @@ The flat 2D browser never exposes controller buttons to page script — there th
 
 | Input | Action |
 | --- | --- |
-| Left thumbstick up / down | Command the paired iPhone camera to zoom in / out within its reported range |
+| Left thumbstick right / left | Command the paired iPhone camera to zoom in / out within its reported range |
 | Left thumbstick click | Reset the phone camera to its nearest supported 1× |
+| Left thumbstick up | Run the conveyor forward while held |
+| Left thumbstick down | Reverse the conveyor while held in Manual mode |
 | Right thumbstick up / right | Jog the servo +`stepDeg` (repeats while held) |
 | Right thumbstick down / left | Jog the servo −`stepDeg` |
 | Right **A** (primary) | Reject now (`/verdict`) |
@@ -33,10 +35,10 @@ The action mapping, step size, repeat cadence, and deadzone live in `controllerS
 Zoom controls the **capture camera on the iPhone before upload**. Enter the
 current phone pairing code in **Connection settings → Phone camera control
 code** on the HUD. The code stays in memory for this page only. Use the
-**− / actual zoom / +** toolbar on PC/Pico 2D, or the left thumbstick in an
+**− / actual zoom / +** toolbar on PC/Pico 2D, or the left thumbstick horizontally in an
 active WebXR AR/VR session over trusted HTTPS; click the level/stick to reset.
-In 2D the controller acts as a pointer. Left-stick horizontal movement is
-ignored; the right stick retains its separate servo mapping.
+In 2D the controller acts as a pointer. Left-stick vertical movement controls
+the conveyor; the right stick retains its separate servo mapping.
 
 The phone reports its camera track's actual range, step when exposed, and current
 setting. Min/max-only ranges use 0.1× requests with the same readback check.
@@ -56,6 +58,7 @@ actual iPhone support and Pico controls must be checked on those devices.
 An ignored constraint is reported as a failure. A camera operation that times
 out stops the sender, requiring Start again rather than uploading uncertain
 pixels. Physical camera zoom and headset acceptance remain pending.
+Conveyor commands require a centered left stick before starting. In Auto, the belt stops when an item is detected and stays stopped during the Verdict and reject cycle. After the cycle, center the stick and push forward again to clear the item. A Verdict timeout requires switching to Manual, clearing the item and returning to Auto. Loss of controller input or XR frame updates stops command renewals, and the ESP32 expires the motor command locally. Automatic admission remains disabled unless the controller is explicitly configured for bench validation.
 
 ## Run locally
 

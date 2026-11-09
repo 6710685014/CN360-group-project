@@ -162,6 +162,47 @@ test("right-stick negative jog stops at zero instead of wrapping", () => {
   assert.deepEqual(angles, [0]);
 });
 
+test("left thumbstick does not move the servo", () => {
+  const session = createFakeSession();
+  const angles = [];
+  attachXrControllerShortcuts({ session, onAngle: (angle) => angles.push(angle) });
+
+  session.inputSources = [pad("left", { axes: [0, 0, 0, -1] })];
+  session.frame(0);
+  assert.deepEqual(angles, []);
+});
+
+test("left stick cannot cancel a simultaneous right servo command", () => {
+  const session = createFakeSession();
+  const angles = [];
+  attachXrControllerShortcuts({ session, onAngle: (angle) => angles.push(angle) });
+
+  session.inputSources = [
+    pad("left", { axes: [0, 0, 0, 1] }),
+    pad("right", { axes: [0, 0, 0, -1] })
+  ];
+  session.frame(0);
+  assert.deepEqual(angles, [5]);
+});
+
+test("left stick reports conveyor direction and stops when released or disconnected", () => {
+  const session = createFakeSession();
+  const directions = [];
+  attachXrControllerShortcuts({ session, onConveyor: (direction) => directions.push(direction) });
+
+  session.inputSources = [pad("left", { axes: [0, 0, 0, -1] })];
+  session.frame(0);
+  session.inputSources = [pad("left", { axes: [0, 0, 0, 1] })];
+  session.frame(16);
+  session.inputSources = [pad("left", { axes: [0, 0, 0, 0] })];
+  session.frame(32);
+  session.inputSources = [];
+  session.frame(48);
+  session.inputSources = [pad("left", { axes: [] })];
+  session.frame(64);
+  assert.deepEqual(directions, [1, -1, 0, null, null]);
+});
+
 test("stop() keeps the poll loop from rescheduling", () => {
   const session = createFakeSession();
   const handle = attachXrControllerShortcuts({ session });
@@ -175,7 +216,7 @@ test("left-stick zoom and right-stick servo operate independently and simultaneo
   const angles = [], zooms = [];
   attachXrControllerShortcuts({ session, initialAngle: 90,
     onAngle: angle => angles.push(angle), onCameraZoom: action => zooms.push(action) });
-  session.inputSources = [pad("left", { axes: [0, 0, 0, -1] })];
+  session.inputSources = [pad("left", { axes: [0, 0, 1, 0] })];
   session.frame(0);
   assert.deepEqual(zooms, ["in"]);
   assert.deepEqual(angles, []);
@@ -185,11 +226,26 @@ test("left-stick zoom and right-stick servo operate independently and simultaneo
   assert.deepEqual(angles, [95]);
 });
 
-test("left-stick horizontal motion and drift do not zoom or move a servo", () => {
+test("left stick horizontal zoom and vertical conveyor commands use separate axes", () => {
+  const session = createFakeSession();
+  const zooms = [];
+  const directions = [];
+  attachXrControllerShortcuts({ session,
+    onCameraZoom: action => zooms.push(action),
+    onConveyor: direction => directions.push(direction) });
+  session.inputSources = [pad("left", { axes: [0, 0, 1, 0] })];
+  session.frame(0);
+  session.inputSources = [pad("left", { axes: [0, 0, 0, -1] })];
+  session.frame(16);
+  assert.deepEqual(zooms, ["in"]);
+  assert.deepEqual(directions, [0, 1]);
+});
+
+test("left-stick vertical motion and horizontal drift do not zoom or move a servo", () => {
   const session = createFakeSession();
   const updates = [];
   attachXrControllerShortcuts({ session, onAngle: () => updates.push("servo"), onCameraZoom: () => updates.push("zoom") });
-  for (const axes of [[0, 0, 1, 0], [0, 0, 0, 0.1]]) {
+  for (const axes of [[0, 0, 0, 1], [0, 0, 0.1, 0]]) {
     session.inputSources = [pad("left", { axes })]; session.frame(0);
   }
   assert.deepEqual(updates, []);
@@ -200,10 +256,10 @@ test("joystick emits camera commands without inventing an applied zoom", () => {
   const zooms = [], actions = [];
   const handle = attachXrControllerShortcuts({ session,
     onCameraZoom: action => zooms.push(action), onAction: action => actions.push(action) });
-  session.inputSources = [pad("left", { axes: [0, 0, 0, -1] })]; session.frame(0);
-  session.inputSources = [pad("left", { buttons: [false, false, true], axes: [0, 0, 0, -1] })]; session.frame(20);
+  session.inputSources = [pad("left", { axes: [0, 0, 1, 0] })]; session.frame(0);
+  session.inputSources = [pad("left", { buttons: [false, false, true], axes: [0, 0, 1, 0] })]; session.frame(20);
   assert.deepEqual(actions, []);
-  session.inputSources = [pad("left", { axes: [0, 0, 0, 1] })]; session.frame(40);
+  session.inputSources = [pad("left", { axes: [0, 0, -1, 0] })]; session.frame(40);
   session.frame(400);
   handle.stop(); session.frame(800);
   assert.deepEqual(zooms, ["in", "reset", "out", "out"]);

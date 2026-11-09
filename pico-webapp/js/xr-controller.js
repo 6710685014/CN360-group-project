@@ -124,6 +124,8 @@ export function attachXrControllerShortcuts({
   initialAngle = 0,
   onAngle = () => {},
   onCameraZoom = () => {},
+  onConveyor = () => {},
+  onStop = () => {},
   onAction = () => {},
   onDebug = null,
   now = () => performance.now()
@@ -147,6 +149,7 @@ export function attachXrControllerShortcuts({
     let direction = 0;
     let zoomDirection = 0;
     let zoomReset = false;
+    let conveyorDirection = null;
 
     for (const source of session.inputSources ?? []) {
       const gamepad = source?.gamepad;
@@ -174,12 +177,22 @@ export function attachXrControllerShortcuts({
         }
       }
 
-      if (source.handedness === "right") direction += stickDirection(gamepad.axes, shortcuts.deadzone);
+      if (source.handedness === "right") {
+        direction += stickDirection(gamepad.axes, shortcuts.deadzone);
+      }
       if (source.handedness === "left") {
-        const vertical = -stickAxes(gamepad.axes)[1];
-        if (Math.abs(vertical) >= (shortcuts.deadzone ?? DEFAULT_CONTROLLER_SHORTCUTS.deadzone)) zoomDirection += Math.sign(vertical);
+        const horizontal = stickAxes(gamepad.axes)[0];
+        if (Math.abs(horizontal) >= (shortcuts.deadzone ?? DEFAULT_CONTROLLER_SHORTCUTS.deadzone)) zoomDirection += Math.sign(horizontal);
+        const axes = gamepad.axes;
+        const index = axes?.length >= 4 ? 3 : 1;
+        if (Number.isFinite(axes?.[index])) {
+          const y = axes[index];
+          conveyorDirection = Math.abs(y) >= (shortcuts.deadzone ?? DEFAULT_CONTROLLER_SHORTCUTS.deadzone) ? (y < 0 ? 1 : -1) : 0;
+        }
       }
     }
+
+    onConveyor(conveyorDirection);
 
     const step = repeater.update(Math.sign(direction), stamp);
     if (step !== 0) {
@@ -197,11 +210,13 @@ export function attachXrControllerShortcuts({
   session.requestAnimationFrame(poll);
   session.addEventListener?.("end", () => {
     active = false;
+    onStop();
   }, { once: true });
 
   return {
     stop() {
       active = false;
+      onStop();
     },
     angle() {
       return angle;

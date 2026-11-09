@@ -47,6 +47,11 @@ void ControlUnit::init(uint32_t now, Config config, const char* session) {
   stationCleared_ = false;
   timedOut_ = false;
   rejectSequenceAlerted_ = false;
+  conveyorDirection_ = 0;
+  conveyorNeedsNeutral_ = true;
+  conveyorCycleActive_ = false;
+  conveyorTimeoutLock_ = false;
+  conveyorClearingItem_ = false;
 }
 
 uint8_t ControlUnit::emit(Action::Kind kind, int angle, Action* out, uint8_t cap,
@@ -188,6 +193,15 @@ bool ControlUnit::setMode(uint32_t now, Mode mode) {
   if (phase_ != Phase::Idle) {
     return false;
   }
+  if (mode != mode_) {
+    conveyorDirection_ = 0;
+    conveyorNeedsNeutral_ = true;
+    conveyorCycleActive_ = false;
+    conveyorClearingItem_ = false;
+    if (mode_ == Mode::Manual && mode == Mode::Auto && !itemPresent_) {
+      conveyorTimeoutLock_ = false;
+    }
+  }
   now_ = now;
   mode_ = mode;
   return true;
@@ -246,6 +260,55 @@ bool ControlUnit::admissionReady() const {
 
 const char* ControlUnit::resolutionReason() const {
   return timedOut_ ? "verdict_timeout" : "verdict";
+}
+
+int ControlUnit::conveyorDirection(uint32_t now) {
+  if (conveyorDirection_ != 0 && now - conveyorCommandAt_ >= 500) {
+    conveyorDirection_ = 0;
+    conveyorNeedsNeutral_ = true;
+  }
+  if (phase_ != Phase::Idle) {
+    conveyorDirection_ = 0;
+    conveyorNeedsNeutral_ = true;
+    if (mode_ == Mode::Auto) {
+      conveyorCycleActive_ = true;
+      if (timedOut_) conveyorTimeoutLock_ = true;
+    }
+  }
+  if (mode_ == Mode::Auto) {
+    if (phase_ == Phase::Idle && itemPresent_ && !conveyorClearingItem_) {
+      conveyorDirection_ = 0;
+    }
+    if (!itemPresent_) conveyorClearingItem_ = false;
+  }
+  return conveyorDirection_;
+}
+
+void ControlUnit::expireConveyor() {
+  conveyorDirection_ = 0;
+  conveyorNeedsNeutral_ = true;
+}
+
+bool ControlUnit::conveyorCommand(uint32_t now, int direction) {
+  if (direction < -1 || direction > 1) return false;
+  conveyorDirection(now);
+  if (direction == 0) {
+    conveyorDirection_ = 0;
+    if (phase_ == Phase::Idle) conveyorNeedsNeutral_ = false;
+    return true;
+  }
+  if (conveyorNeedsNeutral_ || phase_ != Phase::Idle) return false;
+  if (mode_ == Mode::Auto) {
+    if (!config_.admissionEnabled || conveyorTimeoutLock_ || direction < 0) return false;
+    if (itemPresent_) {
+      if (!conveyorCycleActive_ && !conveyorClearingItem_) return false;
+      conveyorClearingItem_ = true;
+    }
+    conveyorCycleActive_ = false;
+  }
+  conveyorDirection_ = direction;
+  conveyorCommandAt_ = now;
+  return true;
 }
 
 uint8_t ControlUnit::resolvePass(uint32_t now, Action* out, uint8_t cap, uint8_t idx) {

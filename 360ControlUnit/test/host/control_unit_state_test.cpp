@@ -417,7 +417,119 @@ void testAdmissionAndClockRollover() {
   }
 }
 
+void testConveyorManualAndTimeout() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  CHECK(u.setMode(0, Mode::Manual));
+  CHECK(!u.conveyorCommand(1, 1));
+  CHECK(u.conveyorCommand(2, 0));
+  CHECK(u.conveyorCommand(3, -1));
+  CHECK(u.conveyorDirection(502) == -1);
+  CHECK(u.conveyorDirection(503) == 0);
+  CHECK(!u.conveyorCommand(504, 1));
+  CHECK(u.conveyorCommand(505, 0));
+  CHECK(u.conveyorCommand(506, 1));
+  CHECK(u.conveyorCommand(507, 0));
+  CHECK(u.conveyorDirection(507) == 0);
+}
+
+void testConveyorAutoPass() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  run(u, 0, false);
+  CHECK(u.conveyorCommand(1, 0));
+  CHECK(!u.conveyorCommand(2, -1));
+  CHECK(u.conveyorCommand(3, 1));
+  run(u, 10, true);
+  CHECK(u.conveyorDirection(10) == 0);
+  run(u, 20, true);
+  CHECK(u.conveyorDirection(20) == 0);
+  CHECK(!u.conveyorCommand(21, 1));
+  Action actions[4];
+  CHECK(u.acceptVerdict(22, u.itemIdentity(), Verdict::Pass, actions, 4).accepted);
+  run(u, 62, true);
+  CHECK(!u.conveyorCommand(63, 1));
+  CHECK(u.conveyorCommand(64, 0));
+  CHECK(u.conveyorCommand(65, 1));
+  CHECK(u.conveyorDirection(66) == 1);
+  CHECK(u.conveyorCommand(66, 1));
+  run(u, 67, false);
+  CHECK(u.conveyorDirection(67) == 1);
+}
+
+void testConveyorTimeoutRequiresManualRecovery() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  run(u, 0, false);
+  CHECK(u.conveyorCommand(1, 0));
+  CHECK(u.conveyorCommand(2, 1));
+  detectItem(u, 10, 20);
+  CHECK(u.conveyorDirection(20) == 0);
+  run(u, 1020, true);
+  CHECK(u.conveyorDirection(1020) == 0);
+  run(u, 1070, true);
+  run(u, 1170, true);
+  run(u, 1220, true);
+  CHECK(u.conveyorCommand(1221, 0));
+  CHECK(!u.conveyorCommand(1222, 1));
+  CHECK(u.setMode(1223, Mode::Manual));
+  CHECK(u.conveyorCommand(1224, 0));
+  CHECK(u.conveyorCommand(1225, -1));
+  run(u, 1226, false);
+  CHECK(u.setMode(1227, Mode::Auto));
+  CHECK(u.conveyorCommand(1228, 0));
+  CHECK(u.conveyorCommand(1229, 1));
+}
+
+void testConveyorLeaseExpiryRequiresNeutral() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  CHECK(u.setMode(0, Mode::Manual));
+  CHECK(u.conveyorCommand(1, 0));
+  u.expireConveyor();
+  CHECK(!u.conveyorCommand(2, 1));
+  CHECK(u.conveyorCommand(3, 0));
+  CHECK(u.conveyorCommand(4, 1));
+  u.expireConveyor();
+  CHECK(u.conveyorDirection(5) == 0);
+}
+
+void testConveyorStopsDuringManualSweep() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  CHECK(u.setMode(0, Mode::Manual));
+  CHECK(u.conveyorCommand(1, 0));
+  CHECK(u.conveyorCommand(2, 1));
+  Action actions[4];
+  CHECK(u.manualSweep(3, actions, 4) > 0);
+  CHECK(u.conveyorDirection(4) == 0);
+  CHECK(!u.conveyorCommand(5, 1));
+}
+
+void testConveyorCannotReuseClearingPermissionAcrossModes() {
+  ControlUnit u;
+  u.init(0, fastConfig(), "boot");
+  run(u, 0, false);
+  CHECK(u.conveyorCommand(1, 0));
+  CHECK(u.conveyorCommand(2, 1));
+  detectItem(u, 10, 20);
+  u.conveyorDirection(20);
+  Action actions[4];
+  CHECK(u.acceptVerdict(21, u.itemIdentity(), Verdict::Pass, actions, 4).accepted);
+  run(u, 61, true);
+  CHECK(u.setMode(62, Mode::Manual));
+  CHECK(u.setMode(63, Mode::Auto));
+  CHECK(u.conveyorCommand(64, 0));
+  CHECK(!u.conveyorCommand(65, 1));
+}
+
 int main() {
+  testConveyorManualAndTimeout();
+  testConveyorAutoPass();
+  testConveyorTimeoutRequiresManualRecovery();
+  testConveyorLeaseExpiryRequiresNeutral();
+  testConveyorStopsDuringManualSweep();
+  testConveyorCannotReuseClearingPermissionAcrossModes();
   testItemBindingAndDeadlineReceipts();
   testAdmissionAndClockRollover();
   testDetectionOpensCycleAndNotifies();

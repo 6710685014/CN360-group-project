@@ -80,6 +80,11 @@ class ControlUnit {
   bool admissionReady() const;
   const char* resolutionReason() const;
 
+  // Conveyor commands are renewed while the operator holds the stick.
+  bool conveyorCommand(uint32_t now, int direction);
+  int conveyorDirection(uint32_t now);
+  void expireConveyor();
+
  private:
   enum class Phase : uint8_t {
     Idle,
@@ -111,6 +116,12 @@ class ControlUnit {
   uint64_t itemCounter_ = 0;
   bool stationCleared_ = false;
   bool timedOut_ = false;
+  int conveyorDirection_ = 0;
+  uint32_t conveyorCommandAt_ = 0;
+  bool conveyorNeedsNeutral_ = true;
+  bool conveyorCycleActive_ = false;
+  bool conveyorTimeoutLock_ = false;
+  bool conveyorClearingItem_ = false;
 };
 
 }  // namespace controlunit

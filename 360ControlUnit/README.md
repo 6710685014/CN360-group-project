@@ -4,6 +4,12 @@ Build outputs and `src/secrets.h` are ignored. Copy `src/secrets.example.h` for
 local configuration and keep real values outside Git. Ignoring a file does not
 remove older commits; see the [history cleanup procedure](../docs/history-cleanup.md).
 
+## Conveyor wiring and control
+
+Connect GPIO32, GPIO33, GPIO25 and GPIO26 to ULN2003 IN1–IN4 respectively. Connect the 5 V 28BYJ-48 motor to the module and power it with a suitable regulated 5 V supply. Connect the module ground to ESP32 ground. The firmware uses a fixed 3 ms half-step interval; direction and mechanical travel need physical verification.
+
+The XR client obtains a short-lived lease from `GET /conveyor/lease` and sends ordered direction commands to `POST /conveyor`. The control task stops the motor when the lease expires, independently of network servicing. Starting, resuming after a cycle, changing mode or reconnecting requires an observed neutral command. Auto forward requires automatic admission to be enabled. After a Verdict timeout, select Manual, clear the beam and return to Auto. Manual servo motion stops the conveyor.
+
 The controller owns one active physical item and its local 3000 ms Verdict
 Window. Admission issues opaque string `controller_session` and `item_id` values.
 Frame Context belongs to the captured image and cannot replace that item pair.

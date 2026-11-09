@@ -23,6 +23,14 @@ using namespace controlunit;
 #define PIN_BUZZER     21
 #define PIN_LED_RED    22
 #define PIN_LED_GREEN  23
+static const int conveyorPins[] = {32, 33, 25, 26};
+static const uint8_t conveyorSteps[] = {0x1, 0x3, 0x2, 0x6, 0x4, 0xc, 0x8, 0x9};
+static int conveyorPhase = 0;
+static uint32_t conveyorStepAt = 0;
+static uint32_t conveyorSequence = 0;
+static uint32_t conveyorLease = 0;
+static uint32_t conveyorLeaseAt = 0;
+static const uint32_t conveyorLeaseMs = 400;
 
 // ---- Static network configuration (adjust to your LAN) ----
 IPAddress staticIp(172, 20, 10, 5);
@@ -316,6 +324,47 @@ static void handleServo() {
   sendJson(200, res);
 }
 
+static void handleConveyor() {
+  JsonDocument req;
+  const auto error = deserializeJson(req, server.arg("plain"));
+  const bool valid = !error && req["direction"].is<int>() &&
+      req["direction"].as<int>() >= -1 && req["direction"].as<int>() <= 1 &&
+      req["sequence"].is<uint32_t>() && req["lease"].is<uint32_t>() && req["controller_session"].is<const char*>();
+  bool accepted = false;
+  xSemaphoreTake(machineMutex, portMAX_DELAY);
+  if (valid && conveyorLease != 0 && millis() - conveyorLeaseAt < conveyorLeaseMs &&
+      req["lease"].as<uint32_t>() == conveyorLease &&
+      machine.itemIdentity().controllerSession == req["controller_session"].as<const char*>() &&
+      req["sequence"].as<uint32_t>() > conveyorSequence) {
+    conveyorSequence = req["sequence"].as<uint32_t>();
+    accepted = machine.conveyorCommand(millis(), req["direction"].as<int>());
+    const uint32_t previousLease = conveyorLease;
+    conveyorLease = esp_random() | 1;
+    if (conveyorLease == previousLease) conveyorLease ^= 2;
+    conveyorLeaseAt = millis();
+  }
+  JsonDocument res;
+  res["accepted"] = accepted;
+  res["controller_session"] = String(machine.itemIdentity().controllerSession.c_str());
+  res["conveyor_sequence"] = conveyorSequence;
+  res["lease"] = conveyorLease;
+  xSemaphoreGive(machineMutex);
+  sendJson(valid ? 200 : 400, res);
+}
+
+static void handleConveyorLease() {
+  JsonDocument res;
+  xSemaphoreTake(machineMutex, portMAX_DELAY);
+  machine.expireConveyor();
+  conveyorLease = esp_random() | 1;
+  conveyorLeaseAt = millis();
+  res["controller_session"] = String(machine.itemIdentity().controllerSession.c_str());
+  res["conveyor_sequence"] = conveyorSequence;
+  res["lease"] = conveyorLease;
+  xSemaphoreGive(machineMutex);
+  sendJson(200, res);
+}
+
 static void handleStatus() {
   JsonDocument res;
   xSemaphoreTake(machineMutex, portMAX_DELAY);
@@ -325,6 +374,7 @@ static void handleStatus() {
   res["pass_count"] = machine.passCount();
   res["reject_count"] = machine.rejectCount();
   res["controller_session"] = String(machine.itemIdentity().controllerSession.c_str());
+  res["conveyor_sequence"] = conveyorSequence;
   res["item_id"] = String(machine.itemIdentity().itemId.c_str());
   res["resolution_reason"] = machine.resolutionReason();
   res["admission_ready"] = machine.admissionReady();
@@ -352,8 +402,22 @@ static void controlTask(void*) {
     esp_task_wdt_reset();
     Action out[4];
     xSemaphoreTake(machineMutex, portMAX_DELAY);
+    if (conveyorLease && millis() - conveyorLeaseAt >= conveyorLeaseMs) {
+      conveyorLease = 0;
+      machine.expireConveyor();
+    }
     const auto n = machine.step(millis(), digitalRead(PIN_IR_SENSOR) == LOW, out, 4);
     applyAll(out, n);
+    const int direction = machine.conveyorDirection(millis());
+    if (direction == 0) {
+      for (int pin : conveyorPins) digitalWrite(pin, LOW);
+    } else if (millis() - conveyorStepAt >= 3) {
+      conveyorStepAt = millis();
+      conveyorPhase = (conveyorPhase + direction + 8) % 8;
+      for (int i = 0; i < 4; ++i) {
+        digitalWrite(conveyorPins[i], (conveyorSteps[conveyorPhase] & (1 << i)) ? HIGH : LOW);
+      }
+    }
     xSemaphoreGive(machineMutex);
     vTaskDelay(pdMS_TO_TICKS(1));
   }
@@ -363,6 +427,10 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(PIN_IR_SENSOR, INPUT_PULLUP);
+  for (int pin : conveyorPins) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, LOW);
+  }
   pinMode(PIN_RELAY, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
@@ -404,6 +472,10 @@ void setup() {
   server.on("/mode", HTTP_OPTIONS, handlePreflight);
   server.on("/servo", HTTP_POST, handleServo);
   server.on("/servo", HTTP_OPTIONS, handlePreflight);
+  server.on("/conveyor", HTTP_POST, handleConveyor);
+  server.on("/conveyor", HTTP_OPTIONS, handlePreflight);
+  server.on("/conveyor/lease", HTTP_GET, handleConveyorLease);
+  server.on("/conveyor/lease", HTTP_OPTIONS, handlePreflight);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/status", HTTP_OPTIONS, handlePreflight);
   server.on("/health", HTTP_GET, handleHealth);

@@ -9,6 +9,7 @@ import { startArPassthrough } from "./ar-passthrough.js";
 import { startVrCinema } from "./vr-cinema.js?v=3";
 import { installXrEmulatorIfRequested } from "./dev-xr-emulator.js";
 import { setMode, setServoAngle, runSweep, sendVerdict } from "./servo.js";
+import { createConveyorSender } from "./conveyor.js";
 import {
   attachXrControllerShortcuts,
   clampAngle,
@@ -1220,11 +1221,20 @@ function startControllerShortcuts(session) {
     return null;
   }
 
+  const conveyor = createConveyorSender({
+    servoUrl: config.servoUrl,
+    onError: () => {
+      elements.servoFeedback.textContent = "Conveyor connection lost. Release the stick before retrying.";
+      mirrorServoFeedbackToVr();
+    }
+  });
   return attachXrControllerShortcuts({
     session,
     shortcuts: config.controllerShortcuts,
     initialAngle: controllerAngle,
     onCameraZoom: action => { void phoneCameraControls.send(action); },
+    onConveyor: (direction) => conveyor.setDirection(direction),
+    onStop: () => conveyor.stop(),
     onAngle: (angle) => {
       controllerAngle = angle;
       syncAngleUi(angle);

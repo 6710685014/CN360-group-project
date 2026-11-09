@@ -17,9 +17,9 @@ window.HUD_CONFIG = Object.freeze({
   controlUnitServoUrl: "/esp/servo",
   controlUnitModeUrl: "/esp/mode",
   // PICO 4 controller shortcuts, active only inside the AR/VR XR modes: the
-  // flat 2D browser never exposes controller buttons to the page. Thumbstick
-  // on the RIGHT hand controls servo angle. LEFT up/down zooms the camera
-  // capture track on the paired phone, and left stick click resets to 1x.
+  // flat 2D browser never exposes controller buttons to the page. The right
+  // stick controls the servo. Left up/down controls the conveyor, left/right
+  // zooms the paired phone camera, and left stick click resets to 1x.
   // Camera control needs the phone pairing code entered in Connection settings.
   // Buttons use the
   // current PICO indices (1 squeeze, 3 A/X, 4 B/Y); open the HUD with
