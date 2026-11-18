@@ -299,7 +299,7 @@ bool ControlUnit::conveyorCommand(uint32_t now, int direction) {
   }
   if (conveyorNeedsNeutral_ || phase_ != Phase::Idle) return false;
   if (mode_ == Mode::Auto) {
-    if (!config_.admissionEnabled || conveyorTimeoutLock_ || direction < 0) return false;
+    if (!config_.admissionEnabled || conveyorTimeoutLock_) return false;
     if (itemPresent_) {
       if (!conveyorCycleActive_ && !conveyorClearingItem_) return false;
       conveyorClearingItem_ = true;

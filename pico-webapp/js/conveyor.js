@@ -46,7 +46,6 @@ export function createConveyorSender({ servoUrl, fetchImpl = fetch, onError = ()
     const currentGeneration = generation;
     try {
       if (!session) {
-        if (direction !== 0) return;
         const status = await request(endpoint("conveyor/lease"));
         expireStaleInput();
         if (generation !== currentGeneration || stopped) return;

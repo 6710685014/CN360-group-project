@@ -413,7 +413,7 @@ static void controlTask(void*) {
       for (int pin : conveyorPins) digitalWrite(pin, LOW);
     } else if (millis() - conveyorStepAt >= 3) {
       conveyorStepAt = millis();
-      conveyorPhase = (conveyorPhase + direction + 8) % 8;
+      conveyorPhase = (conveyorPhase - direction + 8) % 8;
       for (int i = 0; i < 4; ++i) {
         digitalWrite(conveyorPins[i], (conveyorSteps[conveyorPhase] & (1 << i)) ? HIGH : LOW);
       }

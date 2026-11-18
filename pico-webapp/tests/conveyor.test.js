@@ -11,7 +11,7 @@ async function waitUntil(predicate) {
   throw new Error("Timed out waiting for command");
 }
 
-test("requires neutral before movement and renews commands in order", async () => {
+test("auto-sends neutral handshake then movement when joystick pushed immediately", async () => {
   const commands = [];
   const fetchImpl = async (url, options) => {
     if (url.endsWith("/conveyor/lease")) {
@@ -22,21 +22,22 @@ test("requires neutral before movement and renews commands in order", async () =
     return { ok: true, json: async () => ({ accepted: true, controller_session: "boot", conveyor_sequence: body.sequence, lease: body.lease + 1 }) };
   };
   const sender = createConveyorSender({ servoUrl: "http://controller/servo", fetchImpl });
+  // Simulate XR frames refreshing direction every 20ms (like the real headset)
+  let held = 1;
+  const xrFrame = setInterval(() => sender.setDirection(held), 20);
   try {
-    sender.setDirection(1);
-    await delay(110);
-    assert.equal(commands.length, 0);
-    sender.setDirection(0);
-    await waitUntil(() => commands.length === 1);
-    sender.setDirection(1);
-    await waitUntil(() => commands.length === 2);
+    // Auto-sends 0 (neutral handshake) then 1 (actual movement)
+    await waitUntil(() => commands.length >= 2);
+    assert.deepEqual(commands.slice(0, 2).map((c) => c.direction), [0, 1]);
+    assert.deepEqual(commands.slice(0, 2).map((c) => c.sequence), [10, 11]);
+    // Backward also works without neutral
+    held = null;
     sender.setDirection(null);
-    await delay(150);
-    sender.setDirection(1);
-    await delay(150);
-    assert.deepEqual(commands.map((command) => command.direction), [0, 1]);
-    assert.deepEqual(commands.map((command) => command.sequence), [10, 11]);
+    await delay(50);
+    held = -1;
+    await waitUntil(() => commands.some((c) => c.direction === -1));
   } finally {
+    clearInterval(xrFrame);
     sender.stop();
   }
 });
@@ -66,34 +67,37 @@ test("does not send a command when input expires during lease acquisition", asyn
   }
 });
 
-test("a late neutral response cannot arm a reconnected held stick", async () => {
+test("after null then re-push, fresh session starts and direction=1 is sent", async () => {
   const commands = [];
-  let resolveNeutral;
   const fetchImpl = async (url, options) => {
     if (url.endsWith("/conveyor/lease")) {
       return { ok: true, json: async () => ({ controller_session: "boot", conveyor_sequence: 0, lease: 100 }) };
     }
     const body = JSON.parse(options.body);
     commands.push(body);
-    return new Promise((resolve) => {
-      resolveNeutral = () => resolve({ ok: true, json: async () => ({ accepted: true, controller_session: "boot", conveyor_sequence: body.sequence, lease: 101 }) });
-    });
+    return { ok: true, json: async () => ({ accepted: true, controller_session: "boot", conveyor_sequence: body.sequence, lease: 101 }) };
   };
   const sender = createConveyorSender({ servoUrl: "http://controller/servo", fetchImpl });
+  // Simulate XR frames refreshing direction every 20ms
+  let heldDirection = 1;
+  const xrFrame = setInterval(() => { if (heldDirection !== null) sender.setDirection(heldDirection); }, 20);
   try {
-    sender.setDirection(0);
-    await waitUntil(() => commands.length === 1);
+    await waitUntil(() => commands.some((c) => c.direction === 1));
+    // Stop: null clears session
+    heldDirection = null;
     sender.setDirection(null);
-    sender.setDirection(1);
-    resolveNeutral();
-    await delay(250);
-    assert.deepEqual(commands.map((command) => command.direction), [0]);
+    await delay(50);
+    // Re-push: should start fresh and reach direction=1 again
+    heldDirection = 1;
+    const countBefore = commands.length;
+    await waitUntil(() => commands.slice(countBefore).some((c) => c.direction === 1));
   } finally {
+    clearInterval(xrFrame);
     sender.stop();
   }
 });
 
-test("stops renewing a held direction when XR frames stop", async () => {
+test("stops renewing when XR frames stop; resumes when frames restart", async () => {
   const commands = [];
   const fetchImpl = async (url, options) => {
     if (url.endsWith("/conveyor/lease")) {
@@ -104,24 +108,31 @@ test("stops renewing a held direction when XR frames stop", async () => {
     return { ok: true, json: async () => ({ accepted: true, controller_session: "boot", conveyor_sequence: body.sequence, lease: body.lease + 1 }) };
   };
   const sender = createConveyorSender({ servoUrl: "http://controller/servo", fetchImpl });
+  // Simulate XR frames at 20ms intervals
+  const xrFrame = setInterval(() => sender.setDirection(1), 20);
   try {
-    sender.setDirection(0);
-    await waitUntil(() => commands.length > 0);
-    sender.setDirection(1);
     await waitUntil(() => commands.some((command) => command.direction === 1));
+    // Stop XR frames
+    clearInterval(xrFrame);
     await delay(350);
     const count = commands.length;
+    // No new commands after frames stop (input expires)
     await delay(250);
     assert.equal(commands.length, count);
-    sender.setDirection(1);
-    await delay(150);
-    assert.equal(commands.length, count);
+    // Restart XR frames: movement should resume
+    const xrFrame2 = setInterval(() => sender.setDirection(1), 20);
+    try {
+      await waitUntil(() => commands.length > count + 1);
+      assert.ok(commands.slice(count).some((c) => c.direction === 1), "should resume direction=1");
+    } finally {
+      clearInterval(xrFrame2);
+    }
   } finally {
     sender.stop();
   }
 });
 
-test("a resumed held frame cannot erase a stale input gap", async () => {
+test("re-pushing after a stale gap re-acquires a session and resumes movement", async () => {
   let clock = 0;
   const commands = [];
   const fetchImpl = async (url, options) => {
@@ -134,12 +145,17 @@ test("a resumed held frame cannot erase a stale input gap", async () => {
   };
   const sender = createConveyorSender({ servoUrl: "http://controller/servo", fetchImpl, now: () => clock });
   try {
-    sender.setDirection(0);
-    await waitUntil(() => commands.length === 1);
-    clock = 201;
+    // Initial push: auto-handshake (0) then movement (1)
     sender.setDirection(1);
-    await delay(150);
-    assert.deepEqual(commands.map((command) => command.direction), [0]);
+    await waitUntil(() => commands.some((c) => c.direction === 1));
+    // Stale gap: XR frames stopped for >200ms
+    clock = 500;
+    await delay(50);
+    // Re-push after gap: should re-acquire session and move again
+    sender.setDirection(1);
+    const countBefore = commands.length;
+    await waitUntil(() => commands.length > countBefore + 1);
+    assert.ok(commands.some((c) => c.direction === 1), "should send direction=1 after stale gap");
   } finally {
     sender.stop();
   }

@@ -438,7 +438,7 @@ void testConveyorAutoPass() {
   u.init(0, fastConfig(), "boot");
   run(u, 0, false);
   CHECK(u.conveyorCommand(1, 0));
-  CHECK(!u.conveyorCommand(2, -1));
+  CHECK(u.conveyorCommand(2, -1));
   CHECK(u.conveyorCommand(3, 1));
   run(u, 10, true);
   CHECK(u.conveyorDirection(10) == 0);
