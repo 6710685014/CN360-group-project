@@ -57,8 +57,10 @@ export function createConveyorSender({ servoUrl, fetchImpl = fetch, onError = ()
         sequence = status.conveyor_sequence;
         lease = status.lease;
       }
-      if (stopped || direction === null || (needsNeutral && direction !== 0)) return;
-      const sentDirection = direction;
+      if (stopped || direction === null) return;
+      // If firmware needs a neutral handshake, send 0 regardless of current direction
+      // so the user doesn't have to hold neutral while the lease request is in flight.
+      const sentDirection = needsNeutral ? 0 : direction;
       const result = await request(endpoint("conveyor"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -70,7 +72,7 @@ export function createConveyorSender({ servoUrl, fetchImpl = fetch, onError = ()
         throw new Error("Conveyor session changed");
       }
       lease = result.lease;
-      if (sentDirection === 0 && direction === 0 && result.accepted === true) needsNeutral = false;
+      if (sentDirection === 0 && result.accepted === true) needsNeutral = false;
     } catch (error) {
       needsNeutral = true;
       session = null;
