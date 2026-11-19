@@ -46,6 +46,14 @@ Traditional AI-based QC systems require retraining whenever the target defect ch
 
 ## 🧩 Core Modules
 
+### PICO installation and startup
+
+See the [English PICO setup guide](./docs/PICO_SETUP.md) for prerequisites,
+ESP32 wiring and flashing, HTTPS certificate creation, exact Windows launch
+commands, the URLs to open on PICO and iPhone, controller mappings, phone
+camera options and troubleshooting. The tested controller entry point is
+`START-PICO-VR.cmd` in the repository root.
+
 ### ThingsBoard monitoring
 
 The local supervisor dashboard displays inspection verdicts, defect coverage,

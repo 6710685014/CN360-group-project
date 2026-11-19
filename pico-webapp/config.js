@@ -22,7 +22,7 @@ window.HUD_CONFIG = Object.freeze({
   // zooms the paired phone camera, and left stick click resets to 1x.
   // Camera control needs the phone pairing code entered in Connection settings.
   // Buttons use the
-  // current PICO indices (1 squeeze, 3 A/X, 4 B/Y); open the HUD with
+  // PICO xr-standard indices (1 grip, 3 stick click, 4 A/X, 5 B/Y); open the HUD with
   // ?xrdebug=1 to log the real indices if PICO reports a different layout.
   controllerShortcuts: {
     stepDeg: 5,
